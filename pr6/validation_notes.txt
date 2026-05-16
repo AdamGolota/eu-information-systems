@@ -1,0 +1,86 @@
+================================================================
+VALIDATION NOTES — LMS AsyncAPI Specification (asyncapi.yaml)
+Система: Learning Management System
+Версія специфікації: 1.0.0  |  AsyncAPI: 2.6.0
+Дата перевірки: 2026-05-16
+Інструмент: AsyncAPI CLI (asyncapi validate asyncapi.yaml)
+================================================================
+
+1. КОМАНДА
+------------------------------------------------------------------
+asyncapi validate asyncapi.yaml
+
+2. РЕЗУЛЬТАТ ПЕРШОГО ЗАПУСКУ (до виправлень)
+------------------------------------------------------------------
+File asyncapi.yaml is valid but has governance issues.
+
+  1:1   warning  asyncapi-id                       AsyncAPI document should have "id" field.
+  1:1   warning  asyncapi2-tags                    AsyncAPI object should have non-empty "tags" array.
+ 11:11  warning  asyncapi-info-contact-properties  Contact object should have "name", "url" and "email" fields.
+136:21  warning  asyncapi2-message-messageId       Message should have a "messageId" field defined. (StudentEnrolled)
+165:21  warning  asyncapi2-message-messageId       Message should have a "messageId" field defined. (LessonCompleted)
+194:23  warning  asyncapi2-message-messageId       Message should have a "messageId" field defined. (CertificateIssued)
+
+  1:11  information  asyncapi-latest-version  The latest version of AsyncAPI is "3.1.0".
+
+6 problems (0 errors, 6 warnings, 0 infos, 1 info)
+
+3. ВИПРАВЛЕНІ ПОПЕРЕДЖЕННЯ
+------------------------------------------------------------------
+[FIXED] asyncapi-id
+  Причина:  Документ не мав глобального унікального ідентифікатора.
+  Виправлення: додано поле id у корінь документа:
+    id: 'urn:com:lms:event-driven-api'
+
+[FIXED] asyncapi2-tags
+  Причина:  Відсутній масив tags на рівні AsyncAPI-об'єкта.
+  Виправлення: додано теги enrollment, progress, certificate з описами.
+
+[FIXED] asyncapi-info-contact-properties
+  Причина:  У блоці contact було відсутнє поле url.
+  Виправлення: додано url: https://lms.example.com
+
+4. НЕФІКСАБЕЛЬНІ ПОПЕРЕДЖЕННЯ (прийняте рішення)
+------------------------------------------------------------------
+[ACCEPTED] asyncapi2-message-messageId (3 попередження)
+  Попередження: кожне повідомлення (StudentEnrolled, LessonCompleted,
+  CertificateIssued) не має поля messageId.
+
+  Спроба виправлення: поле messageId було додано до кожного повідомлення
+  у components/messages. Однак це спричинило нові ПОМИЛКИ:
+
+    error  asyncapi2-message-messageId-uniqueness
+    "messageId" must be unique across all the messages.
+
+  Причина помилки: валідатор розгортає $ref перед перевіркою унікальності.
+  Оскільки кожен канал має одночасно операції publish і subscribe, що
+  посилаються на одне й те саме повідомлення через $ref, валідатор бачить
+  один messageId двічі і вважає це дублікатом.
+
+  Рішення: messageId відкочено. Попередження залишається як прийнятний
+  компроміс — воно не впливає на коректність специфікації і є відомою
+  поведінкою AsyncAPI CLI при використанні $ref у каналах із двома
+  операціями (publish + subscribe).
+
+[ACCEPTED] asyncapi-latest-version (information, не warning)
+  Повідомлення: використовується AsyncAPI 2.6.0, актуальна версія — 3.1.0.
+  Рішення: версія залишена як 2.6.0 — синтаксис 3.x суттєво відрізняється
+  і виходить за межі поточного завдання.
+
+5. РЕЗУЛЬТАТ ПІСЛЯ ВИПРАВЛЕНЬ
+------------------------------------------------------------------
+File asyncapi.yaml is valid but has (itself and/or referenced documents)
+governance issues.
+
+ 147:21  warning  asyncapi2-message-messageId  (StudentEnrolled)
+ 176:21  warning  asyncapi2-message-messageId  (LessonCompleted)
+ 205:23  warning  asyncapi2-message-messageId  (CertificateIssued)
+
+3 problems (0 errors, 3 warnings)
+
+ПІДСУМОК:
+  - Помилок (errors):    0  ✓
+  - Попереджень:         3  (прийняті, причина задокументована вище)
+  - Статус:              VALID
+
+================================================================

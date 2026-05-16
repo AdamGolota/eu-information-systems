@@ -1,0 +1,382 @@
+asyncapi: '2.6.0'
+
+id: 'urn:com:lms:event-driven-api'
+
+info:
+  title: Learning Management System — Event-Driven API
+  version: '1.0.0'
+  description: >
+    Специфікація асинхронного інтерфейсу для системи управління онлайн-навчанням (LMS).
+    Описує події, що виникають у процесі навчання: запис студента на курс,
+    завершення уроку та видача сертифіката. Взаємодія реалізована через Apache Kafka
+    у рамках подійно-орієнтованої архітектури (EDA).
+  contact:
+    name: LMS Engineering Team
+    url: https://lms.example.com
+    email: lms-dev@university.example.com
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+tags:
+  - name: enrollment
+    description: Події зарахування студентів на курси
+  - name: progress
+    description: Події навчального прогресу
+  - name: certificate
+    description: Події видачі сертифікатів
+
+servers:
+  production:
+    url: kafka.lms.example.com:9092
+    protocol: kafka
+    description: Продакшн-брокер Apache Kafka
+    security:
+      - saslScram: []
+    bindings:
+      kafka:
+        clientId:
+          type: string
+          enum: [lms-producer, lms-consumer]
+
+  staging:
+    url: kafka-staging.lms.example.com:9092
+    protocol: kafka
+    description: Тестовий брокер Apache Kafka (staging-середовище)
+
+defaultContentType: application/json
+
+channels:
+
+  lms/student/enrolled:
+    description: >
+      Канал для подій запису студента на курс. Enrollment Service публікує
+      подію щоразу, коли студент успішно проходить процедуру зарахування.
+    subscribe:
+      operationId: onStudentEnrolled
+      summary: Отримати подію про запис студента на курс
+      description: >
+        Підписники (Notification Service, Progress Service, Analytics Service)
+        отримують це повідомлення для ініціалізації відповідних процесів.
+      tags:
+        - name: enrollment
+        - name: student
+      message:
+        $ref: '#/components/messages/StudentEnrolled'
+    publish:
+      operationId: publishStudentEnrolled
+      summary: Опублікувати подію про запис студента на курс
+      description: >
+        Enrollment Service публікує цю подію після успішної реєстрації
+        студента на курс у базі даних.
+      tags:
+        - name: enrollment
+      message:
+        $ref: '#/components/messages/StudentEnrolled'
+    bindings:
+      kafka:
+        topic: lms.student.enrolled
+        partitions: 6
+        replicas: 3
+
+  lms/lesson/completed:
+    description: >
+      Канал для подій завершення уроку. Progress Service публікує подію
+      після того, як студент проходить усі необхідні елементи уроку.
+    subscribe:
+      operationId: onLessonCompleted
+      summary: Отримати подію про завершення уроку студентом
+      description: >
+        Certificate Service підписується для перевірки повноти проходження курсу;
+        Analytics Service — для збору метрик навчального прогресу.
+      tags:
+        - name: progress
+        - name: lesson
+      message:
+        $ref: '#/components/messages/LessonCompleted'
+    publish:
+      operationId: publishLessonCompleted
+      summary: Опублікувати подію про завершення уроку
+      description: >
+        Progress Service публікує після запису результатів студента в базу даних.
+      tags:
+        - name: progress
+      message:
+        $ref: '#/components/messages/LessonCompleted'
+    bindings:
+      kafka:
+        topic: lms.lesson.completed
+        partitions: 6
+        replicas: 3
+
+  lms/certificate/issued:
+    description: >
+      Канал для подій видачі сертифіката. Certificate Service публікує подію
+      після генерації та підпису цифрового сертифіката про завершення курсу.
+    subscribe:
+      operationId: onCertificateIssued
+      summary: Отримати подію про видачу сертифіката
+      description: >
+        Notification Service надсилає студенту email із сертифікатом;
+        Analytics Service фіксує факт успішного завершення курсу.
+      tags:
+        - name: certificate
+        - name: completion
+      message:
+        $ref: '#/components/messages/CertificateIssued'
+    publish:
+      operationId: publishCertificateIssued
+      summary: Опублікувати подію про видачу сертифіката
+      description: >
+        Certificate Service публікує після успішної генерації PDF-сертифіката
+        та запису метаданих у реєстр сертифікатів.
+      tags:
+        - name: certificate
+      message:
+        $ref: '#/components/messages/CertificateIssued'
+    bindings:
+      kafka:
+        topic: lms.certificate.issued
+        partitions: 3
+        replicas: 3
+
+components:
+
+  messages:
+
+    StudentEnrolled:
+      name: StudentEnrolled
+      title: Подія запису студента на курс
+      summary: Виникає після успішного зарахування студента на курс
+      contentType: application/json
+      headers:
+        type: object
+        properties:
+          correlationId:
+            type: string
+            format: uuid
+            description: Ідентифікатор для трасування між сервісами
+          eventVersion:
+            type: string
+            description: Версія схеми події
+            example: '1.0'
+      payload:
+        $ref: '#/components/schemas/StudentEnrolledPayload'
+      examples:
+        - name: Приклад запису на безкоштовний курс
+          payload:
+            eventId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            studentId: "STU-00421"
+            courseId: "COURSE-PY-101"
+            courseTitle: "Python для початківців"
+            enrolledAt: "2026-05-16T10:30:00Z"
+            enrollmentType: "free"
+            notifyStudent: true
+
+    LessonCompleted:
+      name: LessonCompleted
+      title: Подія завершення уроку
+      summary: Виникає, коли студент успішно завершує урок
+      contentType: application/json
+      headers:
+        type: object
+        properties:
+          correlationId:
+            type: string
+            format: uuid
+          eventVersion:
+            type: string
+            example: '1.0'
+      payload:
+        $ref: '#/components/schemas/LessonCompletedPayload'
+      examples:
+        - name: Приклад завершення відеоуроку
+          payload:
+            eventId: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+            studentId: "STU-00421"
+            courseId: "COURSE-PY-101"
+            lessonId: "LESSON-PY-101-03"
+            lessonTitle: "Цикли та умовні оператори"
+            completedAt: "2026-05-16T11:45:00Z"
+            scorePercent: 87
+            timeSpentSeconds: 2340
+            isCourseCompleted: false
+
+    CertificateIssued:
+      name: CertificateIssued
+      title: Подія видачі сертифіката
+      summary: Виникає після генерації сертифіката про завершення курсу
+      contentType: application/json
+      headers:
+        type: object
+        properties:
+          correlationId:
+            type: string
+            format: uuid
+          eventVersion:
+            type: string
+            example: '1.0'
+      payload:
+        $ref: '#/components/schemas/CertificateIssuedPayload'
+      examples:
+        - name: Приклад видачі сертифіката
+          payload:
+            eventId: "c3d4e5f6-a7b8-9012-cdef-123456789012"
+            certificateId: "CERT-2026-00318"
+            studentId: "STU-00421"
+            studentName: "Іваненко Олексій"
+            studentEmail: "o.ivanenko@student.example.com"
+            courseId: "COURSE-PY-101"
+            courseTitle: "Python для початківців"
+            issuedAt: "2026-05-16T14:00:00Z"
+            certificateUrl: "https://lms.example.com/certificates/CERT-2026-00318.pdf"
+            validUntil: "2029-05-16T00:00:00Z"
+
+  schemas:
+
+    StudentEnrolledPayload:
+      type: object
+      description: Навантаження події запису студента на курс
+      required:
+        - eventId
+        - studentId
+        - courseId
+        - courseTitle
+        - enrolledAt
+        - enrollmentType
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Унікальний ідентифікатор події (UUID v4)
+        studentId:
+          type: string
+          pattern: '^STU-\d{5}$'
+          description: Ідентифікатор студента у системі
+          example: "STU-00421"
+        courseId:
+          type: string
+          pattern: '^COURSE-[A-Z]+-\d{3}$'
+          description: Ідентифікатор курсу
+          example: "COURSE-PY-101"
+        courseTitle:
+          type: string
+          minLength: 3
+          maxLength: 200
+          description: Назва курсу
+        enrolledAt:
+          type: string
+          format: date-time
+          description: Момент запису (ISO 8601 UTC)
+        enrollmentType:
+          type: string
+          enum: [free, paid, trial, corporate]
+          description: Тип зарахування
+        notifyStudent:
+          type: boolean
+          default: true
+          description: Чи надсилати сповіщення студенту
+
+    LessonCompletedPayload:
+      type: object
+      description: Навантаження події завершення уроку
+      required:
+        - eventId
+        - studentId
+        - courseId
+        - lessonId
+        - lessonTitle
+        - completedAt
+        - scorePercent
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        studentId:
+          type: string
+          pattern: '^STU-\d{5}$'
+        courseId:
+          type: string
+          pattern: '^COURSE-[A-Z]+-\d{3}$'
+        lessonId:
+          type: string
+          description: Ідентифікатор уроку
+        lessonTitle:
+          type: string
+          minLength: 3
+          maxLength: 200
+        completedAt:
+          type: string
+          format: date-time
+        scorePercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Відсоток правильних відповідей у тесті
+        timeSpentSeconds:
+          type: integer
+          minimum: 0
+          description: Час проходження уроку в секундах
+        isCourseCompleted:
+          type: boolean
+          default: false
+          description: Чи завершено весь курс після цього уроку
+
+    CertificateIssuedPayload:
+      type: object
+      description: Навантаження події видачі сертифіката
+      required:
+        - eventId
+        - certificateId
+        - studentId
+        - studentName
+        - studentEmail
+        - courseId
+        - courseTitle
+        - issuedAt
+        - certificateUrl
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        certificateId:
+          type: string
+          pattern: '^CERT-\d{4}-\d{5}$'
+          description: Унікальний номер сертифіката
+          example: "CERT-2026-00318"
+        studentId:
+          type: string
+          pattern: '^STU-\d{5}$'
+        studentName:
+          type: string
+          minLength: 2
+          maxLength: 150
+          description: Повне ім'я студента (відображається на сертифікаті)
+        studentEmail:
+          type: string
+          format: email
+          description: Email студента для надсилання сертифіката
+        courseId:
+          type: string
+          pattern: '^COURSE-[A-Z]+-\d{3}$'
+        courseTitle:
+          type: string
+          minLength: 3
+          maxLength: 200
+        issuedAt:
+          type: string
+          format: date-time
+          description: Момент видачі сертифіката (ISO 8601 UTC)
+        certificateUrl:
+          type: string
+          format: uri
+          description: Посилання на PDF-файл сертифіката
+        validUntil:
+          type: string
+          format: date-time
+          description: Термін дії сертифіката (якщо обмежений)
+
+  securitySchemes:
+    saslScram:
+      type: scramSha256
+      description: SASL/SCRAM-SHA-256 автентифікація для Kafka
